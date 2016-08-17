@@ -784,7 +784,7 @@ class Workbench(object):
         buf_len = _HOST_NAME_MAX
         buf = create_string_buffer(buf_len)
         self._c_func_gethostname(buf, c_size_t(buf_len))
-        return string_at(buf)
+        return _to_str(string_at(buf))
 
     def sethostname(self, hostname=None):
         if hostname is None:
@@ -794,10 +794,13 @@ class Workbench(object):
         return self._c_func_sethostname(buf, buf_len)
 
     def getdomainname(self):
+        """
+        Note that this function will return string '(none)' if returned domain name is empty.
+        """
         buf_len = _HOST_NAME_MAX
         buf = create_string_buffer(buf_len)
         self._c_func_getdomainname(buf, c_size_t(buf_len))
-        return string_at(buf)
+        return _to_str(string_at(buf))
 
     def setdomainname(self, domainname=None):
         if domainname is None:
