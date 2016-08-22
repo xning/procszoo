@@ -1,3 +1,4 @@
-include configure.ac Makefile README.first *.md *.txt
-recursive-include procszoo/c_functions *.in *.h
-exclude procszoo/c_functions/macros.py
+include configure.ac Makefile README.first *.md *.txt VERSION
+recursive-include procszoo *.in *.h
+exclude procszoo/c_functions/macros.py procszoo/version.py
+

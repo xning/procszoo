@@ -5,6 +5,10 @@ from distutils.log import warn as printf
 from setuptools import setup, find_packages, Extension, Command
 from setuptools.command.build_py import build_py
 
+here = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(here, "VERSION"), "r") as version_file:
+    version = version_file.read().strip()
+
 class ProcszooBuildPyCommand(build_py):
     def run(self):
         ret = os.system("make PYTHON=%s prepare" % sys.executable)
@@ -14,7 +18,7 @@ class ProcszooBuildPyCommand(build_py):
 
 setup(
     name='procszoo',
-    version='0.97.1',
+    version=version,
     description='python module to operate Linux namespaces',
     license='GPL2+',
     author='xning',
