@@ -1,4 +1,4 @@
-m4_define(PROCSZOO_VERSION, 0.97.1)
+m4_define(PROCSZOO_VERSION, m4_esyscmd([tr -d '\n' < VERSION]))
 AC_INIT(procszoo, PROCSZOO_VERSION, https://github.com/xning/procszoo)
 
 m4_ifdef([AC_COMPUTE_INT], [], [
@@ -41,5 +41,6 @@ if test "${ERRNO_EPERM_VAL:-}"x != x; then
 AC_MSG_RESULT([$ERRNO_EPERM_VAL])
 fi
 
-AC_CONFIG_FILES(procszoo/c_functions/macros.py)
+AC_SUBST(PROCSZOO_VERSION_VAL, PROCSZOO_VERSION)
+AC_CONFIG_FILES(procszoo/c_functions/macros.py procszoo/version.py)
 AC_OUTPUT
