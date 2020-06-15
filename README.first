@@ -6,4 +6,4 @@ You need manually to run tests/test* scripts.
 If you are interested in how to use the procszoo module,
 the tests/* and bin/richard_parker will show you more infos.
 
-For more examples, please reference https://github.com/xning/procszoo/wiki
+For more examples, please reference https://github.com/procszoo/procszoo/wiki

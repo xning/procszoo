@@ -1,6 +1,3 @@
-# Copyright 2016 Red Hat, Inc. All Rights Reserved.
-# Licensed to GPL under a Contributor Agreement.
-
 """Export libc functions that operate Linux namespaces."""
 
 import os

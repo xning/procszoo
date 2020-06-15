@@ -1,7 +1,5 @@
 NR_PIVOT_ROOT = "@NR_PIVOT_ROOT_VAL@"
 NR_SETNS = "@NR_SETNS_VAL@"
-EINVAL = "@ERRNO_EINVAL_VAL@"
-EPERM = "@ERRNO_EPERM_VAL@"
 
 SYSCALL_PIVOT_ROOT_AVAILABLE = True
 SYSCALL_SETNS_AVAILABLE = True
@@ -16,15 +14,5 @@ try:
 except ValueError:
     SYSCALL_SETNS_AVAILABLE = False
 
-try:
-    EINVAL = int(EINVAL)
-except ValueError:
-    raise RuntimeError("cannot determine the errno EINVAL value")
-
-try:
-    EPERM = int(EPERM)
-except ValueError:
-    raise RuntimeError("cannot determine the errno EPERM value")
-
 __all__ = ["SYSCALL_PIVOT_ROOT_AVAILABLE", "SYSCALL_SETNS_AVAILABLE",
-               "NR_PIVOT_ROOT", "NR_SETNS", "EINVAL", "EPERM"]
+               "NR_PIVOT_ROOT", "NR_SETNS",]

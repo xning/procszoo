@@ -27,7 +27,8 @@ AutoReq: no
 Prefix: %{_prefix}
 Vendor: xning <anzhou94@gmail.com>
 Packager: Rayson Zhu <vfreex+procszoo@gmail.com>
-Url: https://github.com/xning/procszoo
+Url: https://github.com/procszoo/procszoo
+Requires: dhclient
 Requires(post): %{_sbindir}/update-alternatives
 Requires(postun): %{_sbindir}/update-alternatives
 BuildRequires: autoconf make gcc

@@ -7,7 +7,7 @@ Procszoo is a small Python module that gives you full
 power to manage your processes by Linux namespaces.
 
 ## Contents
-- [wiki](https://github.com/xning/procszoo/wiki)
+- [Wiki](https://github.com/procszoo/procszoo/wiki)
 - [Goals](#goals)
 - [Resources](#resources)
 - [Requirements](#requirements)
@@ -45,21 +45,22 @@ Resources
 
 Procszoo only requires Python standard libraries and the following packages
 
-    # if you want python3, pls install following package's python3 version
+    # if you want python3, please install following package's python3 version
     # on RHEL/CentOS >= 6
     sudo yum -y install autoconf gcc make glibc-headers
     sudo yum -y install python-devel python-setuptools
     sudo yum -y install wireless-tools dhclient
     # Debain/Ubuntu
     sudo apt-get -y install autoconf gcc make libc6-dev
-    sudo appt-get -y install python-dev python-setuptools
+    sudo apt-get -y install python-dev python-setuptools
     sudo apt-get -y install iw isc-dhcp-client
+
 
 Install
 -------
 1. You can install the *procszoo* by [setuptools](https://pypi.python.org/pypi/setuptools)
 
-        git clone https://github.com/xning/procszoo.git
+        git clone https://github.com/procszoo/procszoo.git
         cd procszoo && sudo ./setup.py install
 
 2. You can install the *procszoo* by [pip](https://pypi.python.org/pypi/pip)
@@ -70,14 +71,13 @@ Install
 
 Building
 --------
-If you don't want to install it, then you can just clone it and do as follows
-to try it,
+If you don't want to install it, then you can just clone it and do as the following commands,
 
-    git clone https://github.com/xning/procszoo.git
+    git clone https://github.com/procszoo/procszoo.git
     cd procszoo && make
 
-By default, the above command will build the program for your default Python version.
-If you want to build for another Python version, just specify your desired Python interpretor
+By default, the above commands will build the program for your default Python version.
+If you want to build it for other Python version, just specify your desired Python interpretor
 through the `PYTHON` variable of the `make` command.
 Eg. To build for Python 3:
 
@@ -91,7 +91,7 @@ directory is 0400, this will cause trouble, hence change it
 
 Try It
 ------
-Now you can try it in an interactive shell as follows (we suppose you installed
+Now you can try it in an interactive shell as follows (we suppose you have installed
 the *procszoo*)
 
     richard_parker -l                       # what namsepaces are available?
@@ -103,37 +103,37 @@ RHEL7/CentOS7, you need *super user* privileges
 
     sudo richard_parker
 
-And now, you can check sth that we are in namespaces
+And now, you can check things that we have in namespaces
 
-* programs get small pids, e.g., 1, 2, etc., and there is only *lo* device
+* programs get small pid number, e.g., 1, 2, etc., and there is only *lo* device
 and it is down
 
         ps -ef 
         ifconfig -a
 
 * open another terminal, we can see that the namespaces entries are different
-from our namespaces
+from last namespaces
 
         ls -l /proc/self/ns
 
-* if the kernel support and enable "user" namespaces, we are *superuser* now
+* if the kernel support and enable "user" namespaces, we are *superuser* at the same time
 
         id
 
-* if you have trouble to try the above steps, please reference
+* if you have trouble to try the above steps, please refer to
 [Known Issues](#known-issues).
 
 
 ## Getting Your Feet Wet with the *procszoo* module
 ---------------------------------------------------
-If you want to enable each namespaces that your kernel supports
+If you want to enable each namespace that your kernel supports
 
     from procszoo.c_functions import *
     
     if __name__ == "__main__":
         spawn_namespaces()
 
-If you need run your own program instead of an interactive *shell*, 
+If you need to run your own program instead of an interactive *shell*, 
 
     from procszoo.c_functionss import *
     
@@ -143,9 +143,9 @@ If you need run your own program instead of an interactive *shell*,
 ## Networks
 -----------
 
-Let's add network to the new namespaces.
+Let's add network function to the new namespaces.
 
-Because we will mount namespaces entries by the *bind* flag, we need
+Because we will mount namespaces entries by the *bind* flag, we have to
 run *richard_parker* as the super user.
 
 Except the shell that *richard_parker* will open, we need another
@@ -171,13 +171,13 @@ so *ip* command could operate it
         sudo touch /var/run/netns/ns
         sudo mount --bind /tmp/ns/net /var/run/netns/ns
 
-* in the new terminal, create two devices and set one of it to the new
-namespace in a new terminal
+* in the new terminal, create two devices and set one of them to the new
+namespace in this new terminal
 
         sudo ip link add veth0 type veth peer name veth1
         sudo ip link set dev veth1 netns ns
 
-* in the new terminal, configure *veth0* device
+* in this new terminal, configure *veth0* device
 
         sudo ip link set veth0 up
         sudo ip addr add 192.168.0.10/24 broadcast 192.168.0.255 dev veth0
@@ -223,8 +223,8 @@ namespace in a new terminal
 
 * os.execv complains "permission deny"
 
-    If running *richard_parker* failed on RHEL/CentOS/Fedora, and get
-    following error message like this
+    If running *richard_parker* unsuccessfully on RHEL/CentOS/Fedora, and get
+    the following error messages like those
 
     >         os.execv(...)
     >     OSError: [Errno 13] Permission denied
@@ -236,8 +236,8 @@ namespace in a new terminal
 
     >     Object "nets" is unknown, try "ip help".
 
-    We need a more latest iproute package, to do that pls reference
-    [here](https://github.com/xning/procszoo/wiki/How-to-build-iproute-and-python-pyroute2-that-supports-net-namespace%3F)
+    We need a more latest iproute package, to do that please refer to
+    [here](https://github.com/procszoo/procszoo/wiki/How-to-build-iproute-and-python-pyroute2-that-supports-net-namespace%3F)
 
 ## Exported Functions, Objects, and Helpful CLI
 -----------------------------------------------
@@ -250,7 +250,7 @@ think that you need learn them all
     - SpawnNamespacesConfig
 
 * key functions
-    - [spawn\_namespaces](https://github.com/xning/procszoo/wiki/The-spawn_namespace-method-workflow)
+    - [spawn\_namespaces](https://github.com/procszoo/procszoo/wiki/The-spawn_namespace-method-workflow)
     - check\_namespaces\_available\_status
 
 * helpful functions
@@ -297,7 +297,7 @@ think that you need learn them all
 
 * Helpful CLI
     - richard\_parker
-    - [mamaji](https://github.com/xning/procszoo/wiki/mamaji-command-line)
+    - [mamaji](https://github.com/procszoo/procszoo/wiki/mamaji-command-line)
 
 ## Test Platforms
 ----------------

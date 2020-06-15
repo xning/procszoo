@@ -34,7 +34,7 @@ from procszoo.utils import *
 
 def get_options():
     prog = os.path.basename(sys.argv[0]) or 'mamaji'
-    project_url = 'http://github.com/xning/procszoo'
+    project_url = 'http://github.com/procszoo/procszoo'
     description = '%s %s' %('A simple cli to let you run a command',
                                 'by some given users and by some give groups')
     parser = ArgumentParser(

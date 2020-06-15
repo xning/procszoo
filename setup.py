@@ -27,7 +27,7 @@ setup(
     author='xning',
     author_email='anzhou94@gmail.com',
     packages = find_packages(),
-    url='https://github.com/xning/procszoo',
+    url='https://github.com/procszoo/procszoo',
     use_2to3=False,
     entry_points={
         'console_scripts':[
@@ -42,8 +42,6 @@ setup(
             depends=['procszoo/c_functions/atfork/atfork.h'],
             ),
         ],
-    package_data={'procszoo':['scripts/my_init']},
-    include_package_data=True,
     zip_safe=False,
     cmdclass={'build_py' : ProcszooBuildPyCommand},
     long_description="Procszoo aims to provide you a simple but complete tool "

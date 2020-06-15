@@ -1,10 +1,9 @@
 import os
 import sys
-from argparse import ArgumentParser
+from argparse import ArgumentParser, REMAINDER
 import traceback
 from procszoo.c_functions import *
 from procszoo.utils import *
-from procszoo.network import *
 
 
 def get_options():
@@ -13,12 +12,12 @@ def get_options():
         ns_status[0] for ns_status in show_namespaces_status()
                                  if ns_status[1]]
     prog = os.path.basename(sys.argv[0]) or 'richard_parker'
-    project_url = "http://github.com/xning/procszoo"
+    project_url = "http://github.com/procszoo/procszoo"
     description = "%s, %s" % (
         'A simple cli to create new namespaces env',
         'default it will enable each available namespaces.')
     parser = ArgumentParser(
-        usage="%s [options] [nscmd]" % prog,
+        usage="%s [options] [nscmd] [nscmd_options]" % prog,
         description=description,
         epilog="%s is part of procszoo: %s"  % (prog, project_url))
 
@@ -51,12 +50,15 @@ def get_options():
     parser.add_argument("--init-program", action="store", dest="init_prog",
                             type=str, metavar='your_init_program',
                             help="replace the my_init program by yours")
+    help_str = """
+    control the setgroups syscall in user namespaces,
+    when setting to 'allow' will enable --no-maproot option and avoid
+    --user-map and --group-map options
+    """
     parser.add_argument(
         "-s", "--setgroups", action="store", type=str, dest="setgroups",
         choices=['allow', 'deny'],
-        help="""control the setgroups syscall in user namespaces,
-        when setting to 'allow' will enable --no-maproot option and avoid
-        --user-map and --group-map options""")
+        help=help_str)
     parser.add_argument("--mountproc", action="store_true", dest="mountproc",
                         help="remount procfs mountpoin, implies -n mount",
                       default=True)
@@ -76,55 +78,40 @@ def get_options():
     parser.add_argument("-l", "--list", action="store_true",
                           dest="show_ns_status", default=False,
                           help="list namespaces status")
+    parser.add_argument("--dhcp", action="store_true", dest="dhcp",
+                            default=True, help='to dhcp network interface')
+    parser.add_argument("--no-dhcp", action="store_false", dest="dhcp",
+                            help='not to dhcp network interface')
     parser.add_argument(
         "--hostname", action="store", type=str, dest="hostname",
         metavar='hostname',
         help="hostname in the new net namespaces")
+    help_str = '''
+    if network is macvtap, will create macvtap on this interface;
+    if network is veth, will add the interface as physical device
+    to the bridge
+    '''
+    parser.add_argument(
+        "--interface", action="store", type=str, dest="interface",
+        metavar='interface',
+        help=help_str)
     parser.add_argument(
         "--nameserver", action="append", type=str, dest="nameservers",
         metavar='nameserver', help="nameserver in the new net namespaces")
     parser.add_argument(
-        "--network", action="store", type=str, dest="network",
-        choices=['macvtap'],
+        "--network", action="store", nargs='?', type=str, dest="network",
+        choices=['macvtap', 'veth'], const='macvtap',
         help="network type")
     parser.add_argument(
         "--bridge", action="store", type=str, dest="bridge", metavar='bridge',
-        help='root namespace bridge available')
+        help='bridge in parent namespaces')
     parser.add_argument("--available-c-functions", action="store_true",
                         dest="show_available_c_functions",
                         help="show available C functions",
                         default=False)
-    parser.add_argument('nscmd', nargs='*', action="store", default=None)
+    parser.add_argument('nscmd', nargs=REMAINDER, action="store", default=None)
 
     return parser.parse_args()
-
-
-def get_extra(args):
-    extra = None
-    if args.network:
-        extra = {}
-        extra['trigger_key'] = 'richard+network'
-        extra['data'] = {}
-        data = extra['data']
-        data['network'] = args.network
-        if args.nameservers:
-            data['nameservers'] = args.nameservers
-        if args.hostname:
-            data['hostname'] = args.hostname
-        if args.bridge:
-            data['bridge'] = args.bridge
-    return extra
-
-
-def set_trigger_for_network(extra):
-    if extra:
-        workbench.register_spawn_namespaces_trigger(
-            'richard+network', _richard_parker_and_network)
-
-
-def _richard_parker_and_network(**kwargs):
-    SpawnNSAndNetwork(**kwargs).entry_point()
-
 
 def show_namespaces_then_quit():
     for v in show_namespaces_status():
@@ -146,8 +133,15 @@ def main():
     if args.show_available_c_functions:
         show_available_c_functions_and_quit()
 
-    extra = get_extra(args)
-    set_trigger_for_network(extra)
+    if args.network or args.nameservers or args.hostname:
+        try:
+            from procszoo.network import cli
+        except (SystemExit, KeyboardInterrupt) as e:
+            printf(e)
+            sys.exit(1)
+        extra = cli.build_extra(args)
+    else:
+        extra = None
 
     _exit_code = 0
     try:
@@ -165,6 +159,7 @@ def main():
             init_prog=args.init_prog,
             interactive=args.interactive,
             extra=extra)
+
     except UnavailableNamespaceFound as e:
         printf(e)
         _exit_code = 1
@@ -174,50 +169,16 @@ def main():
     except NamespaceSettingError as e:
         printf(e)
         _exit_code = 1
-    except SystemExit:
-        _exit_code = 0
+    except RuntimeError as e:
+        printf(e)
+        _exit_code = 1
+    except KeyboardInterrupt:
+        _exit_code = 1
     except Exception as e:
         printf(e)
         traceback.print_exc()
         _exit_code = 1
     sys.exit(_exit_code)
-
-
-class SpawnNSAndNetwork(SpawnNamespacesConfig):
-    def __init__(self, **kwargs):
-        super(SpawnNSAndNetwork, self).__init__(**kwargs)
-        self.top_halves_half_sync = self._top_halves_half_sync
-        self.bottom_halves_after_sync = self._bottom_halves_after_sync
-
-
-    def need_super_privilege(self):
-        return os.geteuid() != 0
-
-
-    def _top_halves_half_sync(self):
-        ifname = 'nth%d' % self.bottom_halves_child_pid
-        create_macvtap(ifname=ifname)
-        add_ifname_to_ns_by_pid(ifname, self.bottom_halves_child_pid)
-        self.default_top_halves_half_sync()
-
-
-    def _bottom_halves_after_sync(self):
-        up_if_by_name('lo')
-        ifnames = get_all_ifnames()
-        # You see, we need a way to kown 'nthXXXX' interface
-        ifname = [n for n in ifnames if n != 'lo'][0]
-        up_if_by_name(ifname)
-        dhcp_if(ifname)
-        data = self.extra['data']
-        if 'nameservers' in data:
-            nameservers = data['nameservers']
-            import tempfile
-            fd, path = tempfile.mkstemp()
-            for nameserver in nameservers:
-                os.write(fd, to_bytes('nameserver %s\n' % nameserver))
-            os.close(fd)
-            mount(source=path, target='/etc/resolv.conf', mount_type='bind')
-        self.default_bottom_halves_after_sync()
 
 
 if __name__ == "__main__":

@@ -10,8 +10,9 @@ Build-Depends:  debhelper (>= 9),
                 python-dev,
                 python3-dev,
                 autoconf
+Depends: isc-dhcp-client
 Standards-Version: 3.9.5
-Homepage: https://github.com/xning/procszoo
+Homepage: https://github.com/procszoo/procszoo
 X-Python-Version: >= 2.6
 X-Python3-Version: >= 3.4
 

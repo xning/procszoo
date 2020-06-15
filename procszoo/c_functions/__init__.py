@@ -1,16 +1,17 @@
-# Copyright 2016 Red Hat, Inc. All Rights Reserved.
-# Licensed to GPL under a Contributor Agreement.
-
 import os
+
+if os.uname()[0] != "Linux":
+    raise ImportError("only support Linux platform")
+
 import sys
 import resource
-import atexit
 import re
 from ctypes import (cdll, c_int, c_long, c_char_p, c_size_t, string_at,
-                        create_string_buffer, POINTER, c_void_p, CFUNCTYPE,
-             pythonapi)
+                    create_string_buffer, POINTER, c_void_p, CFUNCTYPE,
+                    pythonapi)
 import pwd
 import grp
+import errno
 
 try:
     from functools import reduce
@@ -23,15 +24,14 @@ import json
 
 from procszoo.utils import *
 from procszoo.namespaces import *
-from procszoo.version import PROCSZOO_VERSION
-from procszoo.c_functions.macros import *
-from procszoo.c_functions.atfork import atfork as c_atfork
-
-_this_module_absdir = os.path.dirname(os.path.abspath(__file__))
-_procszoo_scripts_dir = os.path.abspath('%s/../scripts' % _this_module_absdir)
-
-if os.uname()[0] != "Linux":
-    raise ImportError("only support Linux platform")
+try:
+    from procszoo.version import PROCSZOO_VERSION
+    from procszoo.c_functions.macros import *
+    from procszoo.c_functions.atfork import atfork as c_atfork
+except ImportError:
+    printf('seems you do not install/build procszoo completely')
+    raise SystemExit()
+from procszoo.scripts import my_init
 
 __version__ = PROCSZOO_VERSION
 __all__ = [
@@ -240,64 +240,14 @@ def _write_to_uid_and_gid_map(maproot, users_map, groups_map, pid):
         except IOError:
             raise NamespaceRequireSuperuserPrivilege()
 
-def _find_my_init(pathes=None, name=None, file_mode=None, dir_mode=None):
-    if pathes is None:
-        pathes = [_procszoo_scripts_dir]
-        if 'PATH' in os.environ:
-            pathes += os.environ['PATH'].split(':')
-
-        cwd = os.path.dirname(os.path.abspath(__file__))
-        absdir = os.path.abspath("%s/../.." % cwd)
-        pathes += [path for path in ["%s/lib/procszoo" % absdir,
-                    "%s/bin" % absdir,
-                    "/usr/local/lib/procszoo",
-                    "/usr/lib/procszoo"] if os.path.exists(path)]
-    if name is None:
-        name = "my_init"
-
-    if file_mode is None:
-        file_mode = os.R_OK
-    if dir_mode is None:
-        dir_mode = os.R_OK
-
-    for path in pathes:
-        my_init = "%s/%s" % (path, name)
-        if os.path.exists(my_init):
-            if os.access(my_init, file_mode):
-                return my_init
-
-    dirs_access_refused = []
-    files_access_refused = []
-    for path in pathes:
-        my_init = "%s/%s" % (path, name)
-        dirs = my_init.split('/')
-        tmp_path = '/'
-        for path_name in dirs:
-            if not path_name: continue
-            tmp_path = os.path.join(tmp_path, path_name)
-            if tmp_path in dirs_access_refused: break
-            if tmp_path in files_access_refused: break
-            if os.path.exists(tmp_path):
-                if os.path.isdir(tmp_path):
-                    if not os.access(tmp_path, dir_mode):
-                        dirs_access_refused.append(tmp_path)
-                        break
-                elif os.path.isfile(tmp_path):
-                    if not os.access(tmp_path, file_mode):
-                        files_access_refused.append(tmp_path)
-                        break
-
-    if dirs_access_refused or files_access_refused:
-        if len(dirs_access_refused) + len(files_access_refused) > 1:
-            err_str = "[%s]" % "\n".join(
-                dirs_access_refused + files_access_refused)
-        else:
-            err_str = "'%s'" % " ".join(
-                dirs_access_refused + files_access_refused)
-        raise IOError("Permission denied: %s" % err_str)
-
-    raise NamespaceSettingError()
-
+def _review_sync_signal(r, size=1):
+    _signal = os.read(r, size)
+    if len(_signal) == 0 and is_string_or_unicode(_signal):
+        raise SystemExit
+    elif len(_signal) <= size:
+        return _signal
+    else:
+        raise RuntimeError('sync failed')
 
 class SpawnNamespacesConfig(object):
     def __init__(self, namespaces=None, maproot=True, mountproc=True,
@@ -312,13 +262,18 @@ class SpawnNamespacesConfig(object):
                 top_halves_child_pid=None,
                 bottom_halves_child_pid=None,
                 parse_conf=None,
+                top_halves_before_fork=None,
                 top_halves_before_sync=None,
                 top_halves_half_sync=None,
                 top_halves_after_sync=None,
+                top_halves_before_exit=None,
                 bottom_halves_before_fork=None,
                 bottom_halves_before_sync=None,
                 bottom_halves_half_sync=None,
                 bottom_halves_after_sync=None,
+                bottom_halves_before_main=None,
+                bottom_halves_main=None,
+                bottom_halves_before_exit=None,
                 top_halves_entry_point=None,
                 bottom_halves_entry_point=None,
                      entry_point=None):
@@ -342,7 +297,6 @@ class SpawnNamespacesConfig(object):
         self.users_map = users_map
         self.groups_map = groups_map
         self.init_prog = init_prog
-        self.my_init = _find_my_init()
         self.func = func
         if interactive is None:
             self.interactive = True
@@ -364,36 +318,50 @@ class SpawnNamespacesConfig(object):
 
         if parse_conf is None:
             self.parse_conf = self.default_handler_to_parse_conf
-        elif not getattr(parse_conf, '__call__'):
+        elif not callable(parse_conf):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'parse_conf', parse_conf)
 
+        if top_halves_before_fork is None:
+            self.top_halves_before_fork = self.default_top_halves_before_fork
+        elif not callable(top_halves_before_fork):
+            raise NamespaceSettingError('handler must be a callable')
+        else:
+            setattr(self, 'top_halves_before_fork', top_halves_before_fork)
+
         if top_halves_before_sync is None:
             self.top_halves_before_sync = self.default_top_halves_before_sync
-        elif not getattr(top_halves_before_sync, '__call__'):
+        elif not callable(top_halves_before_sync):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'top_halves_before_sync', top_halves_before_sync)
 
         if top_halves_half_sync is None:
             self.top_halves_half_sync = self.default_top_halves_half_sync
-        elif not getattr(top_halves_half_sync, '__call__'):
+        elif not callable(top_halves_half_sync):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'top_halves_half_sync', top_halves_half_sync)
 
         if top_halves_after_sync is None:
-            self.top_halves_after_sync = self.default_null_handler
-        elif not getattr(top_halves_after_sync, '__call__'):
+            self.top_halves_after_sync = self.default_top_halves_after_sync
+        elif not callable(top_halves_after_sync):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'top_halves_after_sync', top_halves_after_sync)
 
+        if top_halves_before_exit is None:
+            self.top_halves_before_exit = self.default_top_halves_before_exit
+        elif not callable(top_halves_before_exit):
+            raise NamespaceSettingError('handler must be a callable')
+        else:
+            setattr(self, 'top_halves_before_exit', top_halves_before_exit)
+
         if bottom_halves_before_fork is None:
             self.bottom_halves_before_fork = (
                 self.default_bottom_halves_before_fork)
-        elif not getattr(bottom_halves_before_fork, '__call__'):
+        elif not callable(bottom_halves_before_fork):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'bottom_halves_before_fork',
@@ -402,15 +370,15 @@ class SpawnNamespacesConfig(object):
         if bottom_halves_before_sync is None:
             self.bottom_halves_before_sync = (
                 self.default_bottom_halves_before_sync)
-        elif not getattr(bottom_halves_before_sync, '__call__'):
+        elif not callable(bottom_halves_before_sync):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'bottom_halves_before_sync',
                         bottom_halves_before_sync)
 
         if bottom_halves_half_sync is None:
-            self.bottom_halves_half_sync = self.default_null_handler
-        elif not getattr(bottom_halves_half_sync, '__call__'):
+            self.bottom_halves_half_sync = self.default_bottom_halves_half_sync
+        elif not callable(bottom_halves_half_sync):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'bottom_halves_half_sync', bottom_halves_half_sync)
@@ -418,14 +386,38 @@ class SpawnNamespacesConfig(object):
         if bottom_halves_after_sync is None:
             self.bottom_halves_after_sync = (
                 self.default_bottom_halves_after_sync)
-        elif not getattr(bottom_halves_after_sync, '__call__'):
+        elif not callable(bottom_halves_after_sync):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'bottom_halves_after_sync', bottom_halves_after_sync)
 
+        if bottom_halves_before_main is None:
+            self.bottom_halves_before_main = (
+                self.default_bottom_halves_before_main)
+        elif not callable(bottom_halves_before_main):
+            raise NamespaceSettingError('handler must be a callable')
+        else:
+            setattr(self, 'bottom_halves_before_main',
+                        bottom_halves_before_main)
+
+        if bottom_halves_main is None:
+            self.bottom_halves_main = (self.default_bottom_halves_main)
+        elif not callable(bottom_halves_main):
+            raise NamespaceSettingError('handler must be a callable')
+        else:
+            setattr(self, 'bottom_halves_main', bottom_halves_main)
+
+        if bottom_halves_before_exit is None:
+            self.bottom_halves_before_exit = (
+                self.default_bottom_halves_before_exit)
+        elif not callable(bottom_halves_before_exit):
+            raise NamespaceSettingError('handler must be a callable')
+        else:
+            setattr(self, 'bottom_halves_before_exit', bottom_halves_before_exit)
+
         if top_halves_entry_point is None:
             self.top_halves_entry_point = self.default_top_halves_entry_point
-        elif not getattr(top_halves_entry_point, '__call__'):
+        elif not callable(top_halves_entry_point):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'top_halves_entry_point', top_halves_entry_point)
@@ -433,7 +425,7 @@ class SpawnNamespacesConfig(object):
         if bottom_halves_entry_point is None:
             self.bottom_halves_entry_point = (
                 self.default_bottom_halves_entry_point)
-        elif not getattr(bottom_halves_entry_point, '__call__'):
+        elif not callable(bottom_halves_entry_point):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'bottom_halves_entry_point',
@@ -441,16 +433,22 @@ class SpawnNamespacesConfig(object):
 
         if entry_point is None:
             self.entry_point = self.default_entry_point
-        elif not getattr(entry_point, '__call__'):
+        elif not callable(entry_point):
             raise NamespaceSettingError('handler must be a callable')
         else:
             setattr(self, 'entry_point', entry_point)
+
+    def __getattr__(self, name):
+        if name.startswith('default_'):
+            return self.default_null_handler
 
     def default_entry_point(self, *args, **kwargs):
         self.parse_conf(*args, **kwargs)
 
         r1, w1 = os.pipe()
         r2, w2 = os.pipe()
+
+        self.top_halves_before_fork(*args, **kwargs)
 
         pid = _fork()
 
@@ -470,10 +468,10 @@ class SpawnNamespacesConfig(object):
         os.close(w1)
         os.close(r2)
 
-        child_pid = os.read(r1, 64)
+        _info_by_signal = _review_sync_signal(r1, 64)
         os.close(r1)
         try:
-            child_pid = int(child_pid)
+            child_pid = int(_info_by_signal)
         except ValueError:
             raise RuntimeError("failed to get the child pid")
 
@@ -488,8 +486,11 @@ class SpawnNamespacesConfig(object):
 
         if self.interactive:
             os.waitpid(self.top_halves_child_pid, 0)
+            self.top_halves_before_exit(*args, **kwargs)
         else:
-            sys.exit(0)
+            self.top_halves_before_exit(*args, **kwargs)
+
+        sys.exit(0)
 
     def default_bottom_halves_entry_point(self, r1, w1, r2, w2,
                                                *args, **kwargs):
@@ -521,7 +522,8 @@ class SpawnNamespacesConfig(object):
 
             self.bottom_halves_half_sync(*args, **kwargs)
 
-            if ord(os.read(r4, 1)) != _ACKCHAR:
+            sync_signal = _review_sync_signal(r4)
+            if ord(sync_signal) != _ACKCHAR:
                 raise RuntimeError('sync failed')
             os.close(r4)
 
@@ -553,14 +555,16 @@ class SpawnNamespacesConfig(object):
             os.close(w3)
             os.close(r4)
 
-            if ord(os.read(r3, 1)) != _ACKCHAR:
+            sync_signal = _review_sync_signal(r3)
+            if ord(sync_signal) != _ACKCHAR:
                 raise RuntimeError('sync failed')
             os.close(r3)
 
             os.write(w1, to_bytes("%d" % pid))
             os.close(w1)
 
-            if ord(os.read(r2, 1)) != _ACKCHAR:
+            sync_signal = _review_sync_signal(r2)
+            if ord(sync_signal) != _ACKCHAR:
                 raise RuntimeError('sync failed')
             os.close(r2)
 
@@ -721,22 +725,38 @@ class SpawnNamespacesConfig(object):
         if self.mountproc:
             workbench._mount_proc(mountpoint=self.mountpoint)
 
+    def default_bottom_halves_main(self, *args, **kwargs):
+        my_init.main(*args, **kwargs)
+
+    def default_bottom_halves_before_exit(self, *args, **kwargs):
+        my_init.kill_all_processes(*args, **kwargs)
+
     def default_bottom_halves_after_sync(self, *args, **kwargs):
         if self.func is None:
             if not self.nscmd:
                 self.nscmd = [find_shell()]
             elif not isinstance(self.nscmd, list):
                 self.nscmd = [self.nscmd]
+
+            _args = None
             if "pid" not in self.namespaces:
-                args = self.nscmd
+                _args = self.nscmd
             elif self.init_prog is not None:
-                args = [self.init_prog] + self.nscmd
+                _args = [self.init_prog] + self.nscmd
+
+            self.bottom_halves_before_main(*args, **kwargs)
+            if _args:
+                os.execlp(args[0], *args)
             else:
-                args = [sys.executable, self.my_init, "--skip-startup-files",
-                        "--skip-runit", "--quiet"] + self.nscmd
-            os.execlp(args[0], *args)
+                self.bottom_halves_main(
+                    enable_insecure_key=False, skip_startup_files=True,
+                    skip_runit=True, log_level=my_init.LOG_LEVEL_WARN,
+                    main_command=self.nscmd, run_as_cli=False,
+                    kill_all_on_exit=False)
+                self.default_bottom_halves_before_exit(
+                    my_init.KILL_ALL_PROCESSES_TIMEOUT)
         else:
-            if hasattr(self.func, '__call__'):
+            if callable(self.func):
                 self.func(*args, **kwargs)
             else:
                 raise NamespaceSettingError()
@@ -797,7 +817,6 @@ class Workbench(object):
     class used as a singleton.
     """
     def __init__(self):
-        self.my_init = _find_my_init()
         self.functions = {}
         self.available_c_functions = []
         self.namespaces = Namespaces()
@@ -985,7 +1004,7 @@ class Workbench(object):
                 res = c_func(*tmp_args)
                 c_int_errno = c_int.in_dll(pythonapi, "errno")
                 if func_obj.failed(res):
-                    if c_int_errno.value == EPERM:
+                    if c_int_errno.value == errno.EPERM:
                         raise NamespaceRequireSuperuserPrivilege()
                     else:
                         raise CFunctionCallFailed(os.strerror(c_int_errno.value))
@@ -1129,7 +1148,7 @@ class Workbench(object):
                     res = unshare(c_int(val))
                     _errno_c_int = c_int.in_dll(pythonapi, "errno")
                     if res == -1:
-                        if _errno_c_int.value != EINVAL:
+                        if _errno_c_int.value != errno.EINVAL:
                             keys.append(ns)
                     else:
                         keys.append(ns)

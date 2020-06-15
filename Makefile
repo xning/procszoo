@@ -22,7 +22,7 @@ clean:
 	$(Q)rm -rf .pybuild debian/debhelper-build-stamp debian/files
 	$(Q)rm -rf debian/*.log debian/*.debhelper debian/*.substvars
 	$(Q)rm -rf debian/python-procszoo debian/python3-procszoo .pybuild
-	$(Q)rm -rf procszoo/network/wrappers.py procszoo/network/dhcp.py
+	$(Q)rm -rf procszoo/network/dhcp.py
 
 configure: configure.ac
 	$(Q)[ -e configure ] && autoreconf || autoconf
